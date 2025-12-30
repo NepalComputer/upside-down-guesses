@@ -15,6 +15,11 @@ export interface Question {
   imageUrl?: string;
 }
 
+export interface GameSettings {
+  winningScore: number;
+  roundTime: number;
+}
+
 export interface Room {
   id: string;
   code: string;
@@ -23,6 +28,7 @@ export interface Room {
   currentQuestion?: Question;
   currentRound: number;
   roundStartTime?: number;
+  settings: GameSettings;
 }
 
 export interface RoundResult {
@@ -34,4 +40,4 @@ export interface RoundResult {
   answerTime: number;
 }
 
-export type GamePhase = 'landing' | 'create' | 'join' | 'lobby' | 'playing' | 'roundResult' | 'winner';
+export type GamePhase = 'landing' | 'create' | 'join' | 'lobby' | 'playing' | 'winner';
