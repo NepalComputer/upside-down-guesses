@@ -1,13 +1,15 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import Logo from '@/components/Logo';
 import { useGame } from '@/context/GameContext';
-import { Copy, Crown, Play, UserPlus, LogOut } from 'lucide-react';
+import { Copy, Crown, Play, UserPlus, LogOut, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 
 const LobbyScreen: React.FC = () => {
-  const { room, currentPlayer, startGame, leaveRoom, addBotPlayer } = useGame();
+  const { room, currentPlayer, startGame, leaveRoom, addBotPlayer, updateSettings } = useGame();
 
   if (!room || !currentPlayer) return null;
 
@@ -51,6 +53,53 @@ const LobbyScreen: React.FC = () => {
             Share this code with friends to join
           </p>
         </div>
+
+        {/* Game Settings - Host Only */}
+        {isHost && (
+          <div className="bg-gradient-card rounded-xl p-6 border border-border/50 shadow-lg">
+            <div className="flex items-center gap-2 mb-4">
+              <Settings className="w-5 h-5 text-primary" />
+              <h3 className="font-display text-lg tracking-wider">Game Rules</h3>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="winningScore">Points to Win</Label>
+                <Input
+                  id="winningScore"
+                  type="number"
+                  min={30}
+                  max={500}
+                  step={10}
+                  value={room.settings.winningScore}
+                  onChange={(e) => updateSettings({ winningScore: parseInt(e.target.value) || 100 })}
+                  className="text-center font-display text-lg"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="roundTime">Seconds per Question</Label>
+                <Input
+                  id="roundTime"
+                  type="number"
+                  min={5}
+                  max={60}
+                  step={5}
+                  value={room.settings.roundTime}
+                  onChange={(e) => updateSettings({ roundTime: parseInt(e.target.value) || 10 })}
+                  className="text-center font-display text-lg"
+                />
+              </div>
+              
+              <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-border/30">
+                <p>🥇 1st correct: +10 pts</p>
+                <p>🥈 2nd correct: +5 pts</p>
+                <p>🥉 Others correct: +3 pts</p>
+                <p>❌ Wrong guesses: No penalty</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Players List */}
         <div className="bg-gradient-card rounded-xl p-6 border border-border/50 shadow-lg">

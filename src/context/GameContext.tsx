@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { Player, Room, Question, RoundResult, GamePhase } from '@/types/game';
+import { Player, Room, Question, RoundResult, GamePhase, GameSettings } from '@/types/game';
 import { getRandomQuestion } from '@/data/questions';
 import { nanoid } from 'nanoid';
 
@@ -11,17 +11,20 @@ interface GameContextType {
   usedQuestionIds: string[];
   timeRemaining: number;
   winner: Player | null;
+  showingAnswer: boolean;
   
   setPlayerName: (name: string) => void;
   createRoom: () => void;
   joinRoom: (code: string) => boolean;
   startGame: () => void;
-  submitAnswer: (answer: string) => void;
+  submitAnswer: (answer: string) => boolean;
   nextRound: () => void;
   setPhase: (phase: GamePhase) => void;
   setTimeRemaining: (time: number) => void;
   leaveRoom: () => void;
   addBotPlayer: () => void;
+  updateSettings: (settings: Partial<GameSettings>) => void;
+  setShowingAnswer: (showing: boolean) => void;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -35,8 +38,10 @@ const generateRoomCode = (): string => {
   return code;
 };
 
-const WINNING_SCORE = 100;
-const ROUND_TIME = 10;
+const DEFAULT_SETTINGS: GameSettings = {
+  winningScore: 100,
+  roundTime: 10,
+};
 
 export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
@@ -44,8 +49,9 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [phase, setPhase] = useState<GamePhase>('landing');
   const [roundResults, setRoundResults] = useState<RoundResult[]>([]);
   const [usedQuestionIds, setUsedQuestionIds] = useState<string[]>([]);
-  const [timeRemaining, setTimeRemaining] = useState(ROUND_TIME);
+  const [timeRemaining, setTimeRemaining] = useState(DEFAULT_SETTINGS.roundTime);
   const [winner, setWinner] = useState<Player | null>(null);
+  const [showingAnswer, setShowingAnswer] = useState(false);
 
   const setPlayerName = useCallback((name: string) => {
     const player: Player = {
@@ -70,6 +76,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       players: [hostPlayer],
       status: 'waiting',
       currentRound: 0,
+      settings: { ...DEFAULT_SETTINGS },
     };
     setRoom(newRoom);
     setPhase('lobby');
@@ -78,7 +85,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const joinRoom = useCallback((code: string): boolean => {
     if (!currentPlayer || !room) return false;
     
-    // For demo, we check if the code matches the current room
     if (room.code.toUpperCase() === code.toUpperCase()) {
       const updatedPlayers = [...room.players, currentPlayer];
       setRoom({ ...room, players: updatedPlayers });
@@ -108,6 +114,14 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setRoom({ ...room, players: [...room.players, botPlayer] });
   }, [room]);
 
+  const updateSettings = useCallback((newSettings: Partial<GameSettings>) => {
+    if (!room) return;
+    setRoom({
+      ...room,
+      settings: { ...room.settings, ...newSettings },
+    });
+  }, [room]);
+
   const startGame = useCallback(() => {
     if (!room || room.players.length < 2) return;
     
@@ -123,57 +137,59 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       roundStartTime: Date.now(),
       players: room.players.map(p => ({ ...p, hasAnswered: false })),
     });
-    setTimeRemaining(ROUND_TIME);
+    setTimeRemaining(room.settings.roundTime);
+    setShowingAnswer(false);
     setPhase('playing');
   }, [room]);
 
-  const submitAnswer = useCallback((answer: string) => {
-    if (!room || !currentPlayer || !room.currentQuestion) return;
+  const submitAnswer = useCallback((answer: string): boolean => {
+    if (!room || !currentPlayer || !room.currentQuestion) return false;
     
     const answerTime = Date.now() - (room.roundStartTime || Date.now());
     const isCorrect = answer.toLowerCase().trim() === room.currentQuestion.answer.toLowerCase();
     
-    // Update player's answered status
-    const updatedPlayers = room.players.map(p => 
-      p.id === currentPlayer.id ? { ...p, hasAnswered: true, lastAnswerTime: answerTime } : p
-    );
+    // If wrong, just return false - no penalty, player can try again
+    if (!isCorrect) {
+      return false;
+    }
     
     // Calculate points based on order of correct answers
     const correctAnswers = roundResults.filter(r => r.isCorrect).length;
     let points = 0;
-    if (isCorrect) {
-      if (correctAnswers === 0) points = 20;
-      else if (correctAnswers === 1) points = 15;
-      else if (correctAnswers === 2) points = 10;
-      else points = 5;
-    }
+    if (correctAnswers === 0) points = 10;
+    else if (correctAnswers === 1) points = 5;
+    else points = 3;
     
-    // Update player score
-    const scoredPlayers = updatedPlayers.map(p => 
-      p.id === currentPlayer.id ? { ...p, score: p.score + points } : p
+    // Update player's answered status and score
+    const updatedPlayers = room.players.map(p => 
+      p.id === currentPlayer.id 
+        ? { ...p, hasAnswered: true, lastAnswerTime: answerTime, score: p.score + points } 
+        : p
     );
     
     // Update current player
-    const updatedCurrentPlayer = scoredPlayers.find(p => p.id === currentPlayer.id);
+    const updatedCurrentPlayer = updatedPlayers.find(p => p.id === currentPlayer.id);
     if (updatedCurrentPlayer) setCurrentPlayer(updatedCurrentPlayer);
     
-    setRoom({ ...room, players: scoredPlayers });
+    setRoom({ ...room, players: updatedPlayers });
     
     setRoundResults(prev => [...prev, {
       playerId: currentPlayer.id,
       playerName: currentPlayer.name,
       answer,
-      isCorrect,
+      isCorrect: true,
       points,
       answerTime,
     }]);
+    
+    return true;
   }, [room, currentPlayer, roundResults]);
 
   const nextRound = useCallback(() => {
     if (!room) return;
     
     // Check for winner
-    const potentialWinner = room.players.find(p => p.score >= WINNING_SCORE);
+    const potentialWinner = room.players.find(p => p.score >= room.settings.winningScore);
     if (potentialWinner) {
       setWinner(potentialWinner);
       setRoom({ ...room, status: 'finished' });
@@ -201,8 +217,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       roundStartTime: Date.now(),
       players: room.players.map(p => ({ ...p, hasAnswered: false })),
     });
-    setTimeRemaining(ROUND_TIME);
-    setPhase('playing');
+    setTimeRemaining(room.settings.roundTime);
+    setShowingAnswer(false);
   }, [room, usedQuestionIds]);
 
   const leaveRoom = useCallback(() => {
@@ -212,6 +228,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setRoundResults([]);
     setUsedQuestionIds([]);
     setWinner(null);
+    setShowingAnswer(false);
   }, []);
 
   return (
@@ -223,6 +240,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       usedQuestionIds,
       timeRemaining,
       winner,
+      showingAnswer,
       setPlayerName,
       createRoom,
       joinRoom,
@@ -233,6 +251,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setTimeRemaining,
       leaveRoom,
       addBotPlayer,
+      updateSettings,
+      setShowingAnswer,
     }}>
       {children}
     </GameContext.Provider>
